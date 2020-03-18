@@ -3,7 +3,27 @@
 
 #define MOD_NAME "PDFS"
 
-struct inode *pdfs_get_inode(struct super_block *sb, const struct inode *dir, umode_t mode, dev_t dev)
+/* readdir */
+static int pdfs_iterate(struct file *filp, struct dir_context *ctx)
+{
+	return 0;
+}
+
+static const struct file_operations pdfs_dir_operations = {
+	.owner = THIS_MODULE,
+	.iterate = pdfs_iterate
+};
+
+static struct dentry *pdfs_lookup(struct inode *parent_inode, struct dentry *child_dentry, unsigned int flags)
+{
+	return NULL;
+}
+
+static const struct inode_operations pdfs_inode_operations = {
+	.lookup = pdfs_lookup
+};
+
+static struct inode *pdfs_get_inode(struct super_block *sb, const struct inode *dir, umode_t mode, dev_t dev)
 {
 	struct inode *inode = new_inode(sb);
 
@@ -34,6 +54,8 @@ static int pdfs_fill_super(struct super_block *sb, void *data, int silent)
 	sb->s_magic = 0x10032019;
 
 	inode = pdfs_get_inode(sb, NULL, S_IFDIR, 0);
+	inode->i_op = &pdfs_inode_operations;
+	inode->i_fop = &pdfs_dir_operations;
 	sb->s_root = d_make_root(inode);
 	if (!sb->s_root)
 		return -ENOMEM;
