@@ -1,5 +1,8 @@
 #include <linux/module.h>
 #include <linux/fs.h>
+#include <linux/buffer_head.h>
+#include <linux/slab.h>
+#include "pdfs.h"
 
 #define MOD_NAME "PDFS"
 
@@ -50,9 +53,44 @@ static struct inode *pdfs_get_inode(struct super_block *sb, const struct inode *
 static int pdfs_fill_super(struct super_block *sb, void *data, int silent)
 {
 	struct inode *inode;
+	struct buffer_head *bh;
+	int index = 0;
+	struct pdfs_super_block *sb_disk = kmalloc(sizeof (*sb_disk), GFP_KERNEL);
 
-	sb->s_magic = 0x10032019;
+	if (!sb_disk)
+		return -ENOMEM;
 
+	printk(KERN_ALERT "Reading SB...\n");
+
+	bh = sb_bread(sb, 0);
+
+	sb_disk->version = le32_to_cpu(*(uint32_t *)(bh->b_data + index));
+	index += 4;
+	sb_disk->magic = le32_to_cpu(*(uint32_t *)(bh->b_data + index));
+	index += 4;
+	sb_disk->block_size = le32_to_cpu(*(uint32_t *)(bh->b_data + index));
+	index += 4;
+	sb_disk->free_blocks = le32_to_cpu(*(uint32_t *)(bh->b_data + index));
+
+	printk(KERN_ALERT MOD_NAME ": SB data:\n"
+		" * version:     %u\n"
+		" * magic:       %x\n"
+		" * block size:  %u\n"
+		" * free blocks: %u\n",
+			sb_disk->version, sb_disk->magic,
+			sb_disk->block_size, sb_disk->free_blocks);
+
+	if (unlikely(sb_disk->magic != PDFS_MAGIC)) {
+		printk(KERN_ERR MOD_NAME ": the filesystem does not seem to be a PDFS filesystem.\n");
+		return -EPERM;
+	}
+
+	if (unlikely(sb_disk->block_size != PDFS_DEFAULT_BLOCK_SIZE)) {
+		printk(KERN_ERR MOD_NAME ": the filesystem does not have a correct block size.\n");
+		return -EPERM;
+	}
+
+	sb->s_magic = PDFS_MAGIC;
 	inode = pdfs_get_inode(sb, NULL, S_IFDIR, 0);
 	inode->i_op = &pdfs_inode_operations;
 	inode->i_fop = &pdfs_dir_operations;
@@ -78,6 +116,7 @@ static struct dentry *pdfs_mount(struct file_system_type *fs_type, int flags, co
 
 static void pdfs_kill_superblock(struct super_block *sb)
 {
+	generic_shutdown_super(sb);
 	printk(KERN_INFO MOD_NAME " destroyed. Unmount successful.\n");
 }
 
